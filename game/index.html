@@ -1,0 +1,235 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="icon" href="data:,">
+  <title>Port Azura</title>
+  <style>
+    :root {
+      font-family: Arial, Helvetica, sans-serif;
+      color: #fff;
+      background: #9bd9ed;
+      --panel: #172b35ee;
+      --amber: #ffc342;
+      --shadow: 0 2px 3px #172b35;
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; height: 100%; overflow: hidden; }
+    body { font-size: 14px; }
+
+    /* WebGL surface sits behind everything; the HUD floats above it. */
+    #world-canvas {
+      position: fixed;
+      inset: 0;
+      z-index: 0;
+      width: 100%;
+      height: 100%;
+      display: block;
+      touch-action: none;
+    }
+
+    #hud {
+      position: fixed;
+      inset: 0;
+      z-index: 1;
+      pointer-events: none;
+      font-weight: 700;
+      text-shadow: var(--shadow);
+    }
+
+    /* ---- Mission panel (top-left) ---- */
+    .mission {
+      position: absolute;
+      left: 22px;
+      top: 22px;
+      width: min(420px, 44vw);
+      padding: 15px 18px;
+      border-left: 4px solid var(--amber);
+      background: var(--panel);
+    }
+    #banner { display: block; color: var(--amber); font-size: 12px; letter-spacing: 2px; }
+    #objective { display: block; margin: 9px 0; font-size: 17px; line-height: 1.4; }
+    #timer { font-size: 12px; font-variant-numeric: tabular-nums; letter-spacing: 1px; }
+    #progress { margin-top: 12px; height: 4px; background: #566973; overflow: hidden; }
+    #progress > i { display: block; width: 0; height: 100%; background: var(--amber); }
+
+    /* ---- Wanted + cash (top-right) ---- */
+    #wanted { position: absolute; top: 18px; right: 24px; text-align: right; }
+    #stars { display: block; color: var(--amber); font-size: 32px; letter-spacing: 4px; }
+    #wanted-text { font-size: 10px; letter-spacing: 2px; }
+    #cash-panel { position: absolute; top: 80px; right: 24px; color: #ffe5af; font-size: 38px; font-variant-numeric: tabular-nums; }
+    #score { position: absolute; top: 128px; right: 24px; font-size: 12px; letter-spacing: 1px; }
+    #response {
+      position: absolute;
+      right: 24px;
+      top: 154px;
+      padding: 9px 12px;
+      background: var(--panel);
+      border-right: 3px solid var(--amber);
+      font-size: 11px;
+      line-height: 1.8;
+      white-space: pre-line;
+      text-align: right;
+    }
+
+    /* ---- Minimap + location (bottom-left) ---- */
+    #minimap {
+      position: absolute;
+      left: 22px;
+      bottom: 22px;
+      width: 180px;
+      height: 180px;
+      border: 3px solid #f4e9c8;
+      border-radius: 50%;
+      background: #304c4b;
+    }
+    #location { position: absolute; left: 24px; bottom: 236px; font-size: 14px; letter-spacing: 2px; }
+    #radio { position: absolute; left: 24px; bottom: 215px; color: var(--amber); font-size: 11px; }
+
+    /* ---- Speed (bottom-right) ---- */
+    #speed { position: absolute; right: 24px; bottom: 94px; width: 176px; text-align: right; font-size: 12px; }
+    #kmh { font-size: 50px; font-variant-numeric: tabular-nums; line-height: 1; }
+    .speed-track { height: 5px; margin-top: 10px; background: #172b35aa; }
+    #gauge { display: block; width: 0; height: 100%; background: var(--amber); }
+    #slots { position: absolute; right: 24px; bottom: 178px; font-size: 12px; letter-spacing: 1px; }
+    #hints { position: absolute; right: 24px; bottom: 22px; font-size: 10px; text-align: right; line-height: 1.7; }
+
+    /* ---- Dialogue bar (bottom-centre) ---- */
+    #dialogue {
+      position: absolute;
+      bottom: 24px;
+      left: 50%;
+      transform: translateX(-50%);
+      width: min(480px, calc(100vw - 540px));
+      padding: 13px 18px;
+      background: var(--panel);
+      border-bottom: 3px solid var(--amber);
+    }
+    #speaker { margin-bottom: 6px; color: var(--amber); font-size: 11px; letter-spacing: 2px; }
+    #line { font-size: 14px; line-height: 1.5; }
+
+    #toast {
+      position: absolute;
+      left: 50%;
+      top: 58%;
+      transform: translate(-50%, -50%);
+      padding: 13px 22px;
+      background: var(--panel);
+      color: var(--amber);
+      text-align: center;
+    }
+
+    /* ---- Full-screen overlays (title / pause / over) ---- */
+    .screen { position: fixed; inset: 0; z-index: 2; display: grid; place-items: center; background: #142b3555; }
+    .panel {
+      width: min(520px, calc(100vw - 40px));
+      max-height: calc(100vh - 40px);
+      overflow-y: auto;
+      padding: 34px;
+      background: var(--panel);
+      border-top: 4px solid var(--amber);
+      box-shadow: 0 20px 70px #172b3566;
+    }
+    .eyebrow { color: var(--amber); letter-spacing: 3px; font-size: 11px; }
+    h1 { margin: 12px 0 18px; font-size: clamp(30px, 5vw, 54px); letter-spacing: -1px; }
+    p { color: #e1e8e7; line-height: 1.65; font-size: 15px; }
+    .controls, #save-summary { font-size: 12px; }
+    .actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 20px; }
+    button {
+      padding: 13px 18px;
+      background: var(--amber);
+      color: #172b35;
+      border: 0;
+      cursor: pointer;
+      font: 700 14px Arial, sans-serif;
+    }
+    button:hover { background: #ffe4a4; }
+    button:focus-visible { outline: 3px solid #fff; outline-offset: 3px; }
+
+    .hidden, [hidden] { display: none !important; }
+
+    @media (max-width: 900px) {
+      .mission { left: 14px; top: 14px; width: 47vw; padding: 12px; }
+      #objective { font-size: 14px; }
+      #dialogue { bottom: 216px; width: 52vw; }
+      #stars { font-size: 26px; }
+      #hints { font-size: 9px; }
+      .panel { padding: 26px; }
+    }
+  </style>
+</head>
+<body>
+  <main id="hud" aria-label="Shift information">
+    <section class="mission">
+      <strong id="banner">MARA &middot; DISPATCH</strong>
+      <span id="objective">Your shift starts on the waterfront.</span>
+      <span id="timer">00:00</span>
+      <div id="progress"><i></i></div>
+    </section>
+
+    <div id="wanted">
+      <span id="stars">&#9734;&#9734;&#9734;&#9734;&#9734;</span>
+      <span id="wanted-text">NO HEAT</span>
+    </div>
+
+    <div id="cash-panel">$<span id="cash">0</span></div>
+    <div id="score">FARES 0 &middot; SHIFT 1</div>
+    <div id="response"></div>
+
+    <canvas id="minimap" width="180" height="180"></canvas>
+    <div id="location">PORT AZURA &middot; WATERFRONT</div>
+    <div id="radio">RADIO AZURA 101.9</div>
+
+    <div id="speed">
+      <span id="kmh">0</span><span> KM/H</span>
+      <div class="speed-track"><i id="gauge"></i></div>
+    </div>
+    <div id="slots">1 FISTS &middot; 2 &mdash; &middot; 3 &mdash;</div>
+    <div id="hints">WASD move &middot; SHIFT run &middot; E enter/exit &middot; DRAG orbit &middot; ESC pause</div>
+
+    <div id="dialogue">
+      <div id="speaker">MARA</div>
+      <div id="line">Welcome to Port Azura, Rico. Let's make this shift count.</div>
+    </div>
+
+    <div id="toast" hidden aria-live="polite"></div>
+  </main>
+
+  <section id="title" class="screen" aria-label="Start shift">
+    <div class="panel">
+      <div class="eyebrow">A SHIFT IN THE SUN</div>
+      <h1>Port Azura</h1>
+      <p>Rico is a taxi driver with a city to discover and a living to make. With MARA on dispatch, take your first fare along the sun-soaked waterfront of Port Azura.</p>
+      <p class="controls">WASD walks and drives. Hold Shift to run, press E beside a car to enter or exit, and drag the mouse to orbit your view. Esc or P pauses the shift.</p>
+      <p id="save-summary"></p>
+      <div class="actions">
+        <button id="start" type="button">Start a new shift</button>
+        <button id="continue" type="button" class="hidden">Continue shift</button>
+      </div>
+    </div>
+  </section>
+
+  <section id="pause" class="screen hidden" aria-label="Pause menu">
+    <div class="panel">
+      <div class="eyebrow">PORT AZURA</div>
+      <h1>SHIFT PAUSED</h1>
+      <div class="actions">
+        <button id="resume" type="button">Resume shift</button>
+        <button id="restart" type="button">Restart shift</button>
+      </div>
+    </div>
+  </section>
+
+  <section id="over" class="screen hidden" aria-label="End of shift">
+    <div class="panel">
+      <div class="eyebrow">PORT AZURA</div>
+      <h1>SHIFT OVER</h1>
+      <p>The waterfront settles into evening. See you next shift, Rico.</p>
+    </div>
+  </section>
+
+  <script src="./vendor/three.min.js"></script>
+  <script type="module" src="./src/main.js"></script>
+</body>
+</html>
